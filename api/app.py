@@ -44,55 +44,25 @@ def download_model_from_s3():
         s3 = boto3.client('s3')
         
         # Download model files from S3
-        bucket_name = os.getenv('MODEL_BUCKET', 'fanwu-ml-test')
-        model_prefix = os.getenv('MODEL_PREFIX', 'models/gender-classification/')
-        
-        logger.info(f"Using bucket: {bucket_name}")
-        logger.info(f"Using prefix: {model_prefix}")
+        bucket_name = os.getenv('MODEL_BUCKET', 'your-bucket-name')
+        model_prefix = os.getenv('MODEL_PREFIX', 'models/gender-classification-final/')
         
         os.makedirs(model_dir, exist_ok=True)
         
-        try:
-            # List all model files
-            paginator = s3.get_paginator('list_objects_v2')
-            pages = paginator.paginate(Bucket=bucket_name, Prefix=model_prefix)
-            
-            files_downloaded = 0
-            for page in pages:
-                if 'Contents' in page:
-                    logger.info(f"Found {len(page['Contents'])} objects in this page")
-                    for obj in page['Contents']:
-                        key = obj['Key']
-                        logger.info(f"Processing object: {key}")
-                        if not key.endswith('/'):
-                            local_path = os.path.join(model_dir, os.path.basename(key))
-                            logger.info(f"Downloading {key} to {local_path}")
-                            s3.download_file(bucket_name, key, local_path)
-                            files_downloaded += 1
-                            logger.info(f"Successfully downloaded {key}")
-                else:
-                    logger.warning("No Contents found in this page")
-            
-            if files_downloaded == 0:
-                logger.error("No files were downloaded from S3!")
-                # List what's actually in the bucket
-                try:
-                    response = s3.list_objects_v2(Bucket=bucket_name, Prefix=model_prefix, MaxKeys=10)
-                    if 'Contents' in response:
-                        logger.info("Available objects in bucket:")
-                        for obj in response['Contents']:
-                            logger.info(f"  - {obj['Key']}")
-                    else:
-                        logger.error("No objects found in bucket with the given prefix")
-                except Exception as e:
-                    logger.error(f"Error listing bucket contents: {e}")
-            else:
-                logger.info(f"Model download completed! Downloaded {files_downloaded} files")
-        except Exception as e:
-            logger.error(f"Error during S3 download: {e}")
-            raise e
-    else:
-        logger.info("Model directory already exists, skipping download")
+        # List all model files
+        paginator = s3.get_paginator('list_objects_v2')
+        pages = paginator.paginate(Bucket=bucket_name, Prefix=model_prefix)
+        
+        for page in pages:
+            if 'Contents' in page:
+                for obj in page['Contents']:
+                    key = obj['Key']
+                    if not key.endswith('/'):
+                        local_path = os.path.join(model_dir, os.path.basename(key))
+                        s3.download_file(bucket_name, key, local_path)
+                        logger.info(f"Downloaded {key} to {local_path}")
+        
+        logger.info("Model download completed!")
     
     return model_dir
 
@@ -308,4 +278,4 @@ async def predict_batch(files: list[UploadFile] = File(...)):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host=API_HOST, port=API_PORT, reload=DEBUG)
