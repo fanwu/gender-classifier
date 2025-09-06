@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  gender-classifier:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - MODEL_BUCKET=your-bucket-name
+      - MODEL_PREFIX=models/gender-classification-final/
+      - AWS_DEFAULT_REGION=us-east-1
+    volumes:
+      - ~/.aws:/root/.aws:ro  # Mount AWS credentials
+    restart: unless-stopped
