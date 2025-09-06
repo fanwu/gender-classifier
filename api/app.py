@@ -10,6 +10,10 @@ import os
 import boto3
 from typing import Dict, Any
 import json
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -278,4 +282,7 @@ async def predict_batch(files: list[UploadFile] = File(...)):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host=API_HOST, port=API_PORT, reload=DEBUG)
+    API_HOST = os.getenv("API_HOST", "0.0.0.0")
+    API_PORT = int(os.getenv("API_PORT", "8000"))
+    DEBUG = os.getenv("DEBUG", "false").lower() == "true"
+    uvicorn.run("app:app", host=API_HOST, port=API_PORT, reload=DEBUG)

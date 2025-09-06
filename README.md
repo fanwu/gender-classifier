@@ -19,6 +19,49 @@ A FastAPI-based REST API for classifying gender from images using Vision Transfo
 - Docker (for containerized deployment)
 - AWS CLI configured with appropriate permissions
 
+## Environment Configuration
+
+### 1. Environment Variables Setup
+
+The application requires environment variables for configuration. **Never commit your `.env` file to git** as it contains sensitive information.
+
+```bash
+# Copy the example file to create your environment config
+cp .env.example .env
+
+# Edit .env with your actual values
+nano .env  # or use your preferred editor
+```
+
+### 2. Required Environment Variables
+
+Edit your `.env` file with the following required variables:
+
+```bash
+# S3 Model Configuration
+MODEL_BUCKET=your-s3-bucket-name
+MODEL_PREFIX=models/gender-classification-final/
+
+# AWS Credentials (local development only)
+AWS_ACCESS_KEY_ID=your_access_key_here
+AWS_SECRET_ACCESS_KEY=your_secret_access_key_here
+AWS_DEFAULT_REGION=us-east-1
+
+# API Configuration
+API_HOST=0.0.0.0
+API_PORT=8000
+DEBUG=true
+
+# CORS Configuration (restrict for production)
+ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8080
+```
+
+**⚠️ Security Notes**: 
+- The `.env` file is already in `.gitignore` and should never be committed to version control
+- Never commit AWS credentials to git repositories
+- Use IAM roles instead of access keys in production environments
+- Review and restrict CORS origins for production deployments
+
 ## Quick Start
 
 ### 1. Clone and Setup
@@ -28,14 +71,9 @@ git clone <your-repo>
 cd gender-classifier-api
 ```
 
-### 2. Set Environment Variables
+### 2. Environment Setup
 
-```bash
-export MODEL_BUCKET=your-s3-bucket-name
-export MODEL_PREFIX=models/gender-classification-final/
-export AWS_ACCESS_KEY_ID=your_access_key
-export AWS_SECRET_ACCESS_KEY=your_secret_key
-```
+Follow the [Environment Configuration](#environment-configuration) section above to set up your `.env` file.
 
 ### 3. Choose Your Testing Method
 
@@ -44,10 +82,18 @@ export AWS_SECRET_ACCESS_KEY=your_secret_key
 ### Option A: Direct Python (Fastest)
 
 ```bash
+# Navigate to api directory
+cd api
+
+# Ensure .env file is configured (see Environment Configuration above)
+cp .env.example .env  # Edit with your values
+
 # Install dependencies
 pip install -r requirements.txt
 
 # Run the API
+python app.py
+# OR
 uvicorn app:app --host 0.0.0.0 --port 8000 --reload
 
 # Test
@@ -57,18 +103,26 @@ curl http://localhost:8000/health
 ### Option B: Virtual Environment (Recommended)
 
 ```bash
-# Create virtual environment
-python -m venv venv
+# Navigate to api directory
+cd api
+
+# Ensure .env file is configured (see Environment Configuration above)
+cp .env.example .env  # Edit with your values
+
+# Create virtual environment (if not exists)
+python -m venv .venv
 
 # Activate virtual environment
-source venv/bin/activate  # Mac/Linux
+source .venv/bin/activate  # Mac/Linux
 # OR
-venv\Scripts\activate     # Windows
+.venv\Scripts\activate     # Windows
 
 # Install dependencies
 pip install -r requirements.txt
 
 # Run the API
+python app.py
+# OR
 uvicorn app:app --host 0.0.0.0 --port 8000 --reload
 
 # When done, deactivate
@@ -442,7 +496,7 @@ aws ecs describe-services --cluster gender-classifier-cluster --services gender-
 # Use AWS Systems Manager Parameter Store or Secrets Manager
 MODEL_BUCKET=your-production-bucket
 MODEL_PREFIX=models/gender-classification-final/
-# Don't use AWS_ACCESS_KEY_ID in production - use IAM roles
+# Use IAM roles instead of access keys in production
 ```
 
 ## Cost Optimization
