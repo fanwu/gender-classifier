@@ -68,7 +68,7 @@ ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8080
 
 ```bash
 git clone <your-repo>
-cd gender-classifier-api
+cd gender-classifier
 ```
 
 ### 2. Environment Setup
@@ -132,10 +132,25 @@ deactivate
 ### Option C: Docker (Production-like)
 
 ```bash
+# Navigate to api directory
+cd api
+
 # Build image
 docker build -t gender-classifier .
 
-# Run container
+# IMPORTANT: Docker containers cannot access ~/.aws by default!
+# Choose the appropriate option based on your AWS credential setup:
+
+# Option C1: Use .env file (only if .env contains AWS credentials)
+docker run -p 8000:8000 --env-file .env gender-classifier
+
+# Option C2: Mount AWS credentials (recommended if using ~/.aws folder)
+docker run -p 8000:8000 \
+  -v ~/.aws:/root/.aws:ro \
+  --env-file .env \
+  gender-classifier
+
+# Option C3: Pass individual environment variables
 docker run -p 8000:8000 \
   -e MODEL_BUCKET=fanwu-ml-test \
   -e MODEL_PREFIX=models/gender-classification-final/ \
@@ -280,63 +295,55 @@ aws s3 sync ./gender-classification-final/ s3://your-bucket-name/models/gender-c
 
 ## Production Deployment
 
-### AWS ECS Deployment
+### Production Deployment with Terraform
 
-#### Step 1: Update Configuration
+#### Prerequisites
 ```bash
-# Edit deploy.sh
-export AWS_ACCOUNT_ID="123456789012"
-export AWS_REGION="us-east-1"
-export ECR_REPOSITORY="gender-classifier"
+# Install Terraform
+# macOS: brew install terraform
+# Or download from: https://www.terraform.io/downloads
 
-# Update task-definition.json with your account ID
+# Verify installation
+terraform --version
 ```
 
-#### Step 2: Deploy
+#### Quick Deployment (Recommended)
 ```bash
-# Make script executable
-chmod +x deploy.sh
+# Configure Terraform variables
+cd terraform
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with your actual values (AWS account ID, bucket name, etc.)
 
-# Deploy to AWS
-./deploy.sh
+# Return to project root and deploy everything
+cd ..
+./deploy.sh deploy
 ```
 
-#### Step 3: Create ECS Infrastructure
+#### Step-by-Step Deployment
 ```bash
-# Create cluster
-aws ecs create-cluster --cluster-name gender-classifier-cluster
+# Build and push Docker image only
+./deploy.sh build
 
-# Register task definition
-aws ecs register-task-definition --cli-input-json file://task-definition.json
+# Review infrastructure changes before applying
+./deploy.sh plan
 
-# Create service (update with your VPC/subnet IDs)
-aws ecs create-service \
-  --cluster gender-classifier-cluster \
-  --service-name gender-classifier-service \
-  --task-definition gender-classifier \
-  --desired-count 1 \
-  --launch-type FARGATE \
-  --network-configuration "awsvpcConfiguration={subnets=[subnet-xxx],securityGroups=[sg-xxx],assignPublicIp=ENABLED}"
+# Apply the planned changes
+./deploy.sh apply
+
+# View deployment information
+./deploy.sh outputs
 ```
 
-### CloudFormation Deployment (Complete Infrastructure)
-
+#### Available Commands
 ```bash
-# Deploy full infrastructure
-aws cloudformation create-stack \
-  --stack-name gender-classifier-stack \
-  --template-body file://cloudformation.yaml \
-  --parameters ParameterKey=ImageURI,ParameterValue=YOUR_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/gender-classifier:latest \
-  --capabilities CAPABILITY_IAM
-
-# Wait for completion
-aws cloudformation wait stack-create-complete --stack-name gender-classifier-stack
-
-# Get load balancer URL
-aws cloudformation describe-stacks \
-  --stack-name gender-classifier-stack \
-  --query 'Stacks[0].Outputs[?OutputKey==`LoadBalancerURL`].OutputValue' \
-  --output text
+./deploy.sh deploy        # Full deployment (build + infrastructure)
+./deploy.sh build         # Build and push Docker image only
+./deploy.sh plan          # Create Terraform execution plan
+./deploy.sh apply         # Apply existing Terraform plan
+./deploy.sh infrastructure # Deploy infrastructure only (assumes image exists)
+./deploy.sh outputs       # Show deployment outputs
+./deploy.sh destroy       # Destroy all infrastructure
+./deploy.sh help          # Show help message
 ```
 
 ## Web App Integration
