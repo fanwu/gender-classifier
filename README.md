@@ -1,6 +1,15 @@
-# Gender Classification API
+# Gender Classification
 
-A FastAPI-based REST API for classifying gender from images using Vision Transformer (ViT) model. The API detects single-person images and predicts male/female classification with confidence scores.
+This project is a complete end-to-end gender classification system consisting of four main components:
+
+1. **Model Training** - Uses SageMaker with Jupyter notebook for training Vision Transformer models on gender classification data
+2. **FastAPI Backend** - A REST API deployed on AWS ECS that connects to the trained model to predict male/female gender from images
+3. **React Web UI** - A user-friendly web interface for uploading pictures and viewing gender classification results
+4. **Infrastructure as Code** - Terraform deployment scripts for complete AWS infrastructure setup including ECS, ALB, S3, and CloudFront
+
+Demo:
+Web UI: http://fanwu-ai-test.s3-website-us-east-1.amazonaws.com/
+API: http://gender-classifier-alb-553295840.us-east-1.elb.amazonaws.com/docs
 
 ## Features
 
@@ -19,11 +28,130 @@ A FastAPI-based REST API for classifying gender from images using Vision Transfo
 - Docker (for containerized deployment)
 - AWS CLI configured with appropriate permissions
 
-## Environment Configuration
+## 1. Model Training
 
-### 1. Environment Variables Setup
+### Training Your Own Gender Classification Model
 
-The application requires environment variables for configuration. **Never commit your `.env` file to git** as it contains sensitive information.
+The project includes a Jupyter notebook (`gender-classifier.ipynb`) for training custom gender classification models using Vision Transformer architecture on SageMaker. The training process uses S3 for data storage and model artifacts.
+
+#### Training Overview
+
+The training pipeline includes:
+- **Data Loading**: Images loaded directly from S3 with automatic labeling based on folder structure or filename
+- **Data Augmentation**: Random horizontal flip, rotation, color jitter, and resized crop for improved generalization.
+- **Person Detection**: DETR model integration to filter multi-person images during training
+- **Model Architecture**: Vision Transformer (ViT-base-patch16-224) fine-tuned for gender classification
+- **Validation**: 80/20 train-validation split with accuracy metrics
+- **Model Persistence**: Automatic upload of trained models to S3
+
+#### During the training process
+
+Initially the model was not accurate. I tried several approach to make it better.
+- There were not enough pictures in the training data set. I tried Data Augmentation but it didn't help much. So Data Augmentation was not used.
+- I downloaded pictures from CelebA Dataset and labeled them. They worked out very well.
+- I tweaked model configurations to improve its quality
+- I used Meta DETR model to detect and count people's faces, to filter out multi people pictures and pictures without people
+
+#### Training Setup
+
+1. **Prepare Training Data in S3**:
+   ```
+   s3://your-bucket/gender-data/
+   ├── male/
+   │   ├── image1.jpg
+   │   └── image2.jpg
+   └── female/
+       ├── image1.jpg
+       └── image2.jpg
+   ```
+
+   Or use filename-based labeling:
+   ```
+   s3://your-bucket/gender-data/
+   ├── male_person1.jpg
+   ├── male_person2.jpg
+   ├── female_person1.jpg
+   └── female_person2.jpg
+   ```
+
+2. **Open Training Notebook in SageMaker**:
+   ```bash
+   jupyter notebook gender-classifier.ipynb
+   ```
+
+3. **Configure Training Parameters**:
+   ```python
+   BUCKET_NAME = "your-s3-bucket"
+   S3_PREFIX = "gender-data/"
+   MODEL_NAME = "google/vit-base-patch16-224"
+   ```
+
+4. **Execute Training**:
+   - The notebook automatically handles data loading, preprocessing, and training
+   - Training includes person detection filtering to ensure single-person images
+   - Models are automatically saved to S3 upon completion
+
+#### Training Features
+
+- **GPU Support**: Automatic CUDA detection and usage when available
+- **Data Augmentation**: Comprehensive image augmentation for better generalization
+- **Person Detection**: Automatic filtering of multi-person images using DETR model
+- **S3 Integration**: Direct data loading from S3 with automatic model upload
+- **Validation Pipeline**: Built-in prediction testing on sample images
+- **Error Handling**: Robust error handling for corrupted or invalid images
+
+#### Training Results
+
+The training notebook processes:
+- **Dataset Size**: 198 images (81 male, 117 female) in the example
+- **Train/Validation Split**: 80/20 stratified split
+- **Training Epochs**: 5 epochs with 2e-5 learning rate
+- **Batch Size**: 2 (adjustable based on GPU memory)
+- **Final Model**: Saved to `s3://bucket/models/gender-classification/`
+
+#### Post-Training Validation
+
+The notebook includes comprehensive testing:
+```python
+# Test on validation images
+results = predict_all_images_in_folder('test/', BUCKET_NAME, model, processor, detector)
+
+# Example results with person detection filtering
+- Single person images: Accurate gender prediction with confidence scores
+- Multi-person images: Automatic rejection with error message
+- Non-person images: Automatic filtering out during prediction
+```
+
+### Model Requirements
+
+#### S3 Model Structure
+Your trained model should be stored in S3 with this structure:
+```
+s3://your-bucket-name/models/gender-classification-final/
+├── config.json
+├── model.safetensors
+├── preprocessor_config.json
+└── tokenizer.json (if applicable)
+```
+
+#### Upload Your Model
+```bash
+# From your training environment (automatically done by notebook)
+aws s3 sync ./gender-classification-final/ s3://your-bucket-name/models/gender-classification-final/
+
+# Or manually upload individual files
+aws s3 cp config.json s3://your-bucket-name/models/gender-classification-final/
+aws s3 cp model.safetensors s3://your-bucket-name/models/gender-classification-final/
+aws s3 cp preprocessor_config.json s3://your-bucket-name/models/gender-classification-final/
+```
+
+## 2. FastAPI Backend
+
+### Environment Configuration
+
+#### 1. Environment Variables Setup
+
+The API application requires environment variables for configuration. **Never commit your `.env` file to git** as it contains sensitive information.
 
 ```bash
 # Copy the example file to create your environment config
@@ -33,7 +161,7 @@ cp .env.example .env
 nano .env  # or use your preferred editor
 ```
 
-### 2. Required Environment Variables
+#### 2. Required Environment Variables
 
 Edit your `.env` file with the following required variables:
 
@@ -62,22 +190,20 @@ ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8080
 - Use IAM roles instead of access keys in production environments
 - Review and restrict CORS origins for production deployments
 
-## Quick Start
+### API Development and Testing
 
-### 1. Clone and Setup
+#### 1. Clone and Setup
 
 ```bash
 git clone <your-repo>
 cd gender-classifier
 ```
 
-### 2. Environment Setup
+#### 2. Environment Setup
 
-Follow the [Environment Configuration](#environment-configuration) section above to set up your `.env` file.
+Follow the [Environment Configuration](#2-fastapi-backend) section above to set up your `.env` file.
 
-### 3. Choose Your Testing Method
-
-## Local Development
+#### 3. Choose Your Development Method
 
 ### Option A: Direct Python (Fastest)
 
@@ -275,25 +401,8 @@ curl -X POST "http://localhost:8000/predict-batch" \
 - Invalid image format
 - Processing errors
 
-## Model Requirements
 
-### S3 Model Structure
-Your trained model should be stored in S3 with this structure:
-```
-s3://your-bucket-name/models/gender-classification-final/
-├── config.json
-├── pytorch_model.bin
-├── preprocessor_config.json
-└── tokenizer.json (if applicable)
-```
-
-### Upload Your Model
-```bash
-# From your SageMaker notebook or training environment
-aws s3 sync ./gender-classification-final/ s3://your-bucket-name/models/gender-classification-final/
-```
-
-## Production Deployment
+## 4. Infrastructure as Code
 
 ### Production Deployment with Terraform
 
@@ -346,7 +455,7 @@ cd ..
 ./deploy.sh help          # Show help message
 ```
 
-## Web App (React UI)
+## 3. React Web UI
 
 ### Quick Start
 
