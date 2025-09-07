@@ -346,7 +346,71 @@ cd ..
 ./deploy.sh help          # Show help message
 ```
 
-## Web App Integration
+## Web App (React UI)
+
+### Quick Start
+
+A React web application provides a user-friendly interface for the Gender Classification API.
+
+```bash
+# Navigate to UI directory
+cd ui
+
+# Install dependencies
+npm install
+
+# Start development server (make sure API is running on port 8000)
+npm start
+
+# Open http://localhost:3000 in your browser
+```
+
+### Features
+
+- 🖼️ **Drag & Drop Upload** - Easy image upload with drag and drop support
+- 🔍 **Real-time Analysis** - Instant gender classification with AI
+- 📊 **Detailed Results** - Gender prediction with confidence scores and probability breakdown
+- ⚠️ **Smart Error Handling** - Clear feedback for edge cases (multiple people, no people, etc.)
+- 📱 **Responsive Design** - Works on desktop, tablet, and mobile devices
+- 🎨 **Modern UI** - Clean, professional interface with smooth animations
+- 🔄 **API Health Check** - Visual indicator of API connection status
+
+### Usage
+
+1. **Start the API server:**
+   ```bash
+   cd api
+   source .venv/bin/activate  
+   python app.py
+   ```
+
+2. **Start the UI (in another terminal):**
+   ```bash
+   cd ui
+   npm start
+   ```
+
+3. **Upload and analyze images:**
+   - Click upload area or drag & drop images
+   - View real-time gender classification results
+   - See confidence scores and probability breakdowns
+
+### Configuration
+
+Create `.env` file in `ui/` directory to customize API URL:
+```bash
+REACT_APP_API_URL=http://localhost:8000
+```
+
+### Production Build
+
+```bash
+cd ui
+npm run build
+# Serve the build/ directory with your web server
+```
+
+## API Integration Examples
 
 ### JavaScript Example
 ```javascript
