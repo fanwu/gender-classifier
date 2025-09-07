@@ -8,8 +8,8 @@ This project is a complete end-to-end gender classification system consisting of
 4. **Infrastructure as Code** - Terraform deployment scripts for complete AWS infrastructure setup including ECS, ALB, S3, and CloudFront
 
 Demo:
-Web UI: http://fanwu-ai-test.s3-website-us-east-1.amazonaws.com/
-API: http://gender-classifier-alb-553295840.us-east-1.elb.amazonaws.com/docs
+- Web UI: http://fanwu-ai-test.s3-website-us-east-1.amazonaws.com/ (TODO: I set up Cloudfront but didn't use it here, as I would have to setup a certificate to make https work between the React app and API)
+- API: http://gender-classifier-alb-553295840.us-east-1.elb.amazonaws.com/docs
 
 ## Features
 
