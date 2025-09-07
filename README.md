@@ -410,6 +410,61 @@ npm run build
 # Serve the build/ directory with your web server
 ```
 
+### Production Deployment to AWS S3
+
+#### Simple One-Time Setup
+
+1. **Configure deployment settings** (one-time setup):
+   ```bash
+   # Edit deploy-config.env in project root
+   S3_BUCKET_UI=your-bucket-name
+   S3_UI_PREFIX=ui/                    # Optional: deploy to folder
+   CLOUDFRONT_ID=E123ABCDEFGHIJ        # Optional: CloudFront distribution
+   ```
+
+2. **Deploy anytime:**
+   ```bash
+   ./deploy.sh deploy-ui
+   ```
+   
+   That's it! The configuration is automatically loaded.
+
+#### Manual Override (if needed)
+
+```bash
+# Override config file settings
+S3_BUCKET_UI=different-bucket ./deploy.sh deploy-ui
+```
+
+#### Complete Deployment Workflow
+
+```bash
+# 1. Deploy API infrastructure
+./deploy.sh deploy
+
+# 2. Get API load balancer URL
+./deploy.sh outputs
+
+# 3. Update ui/.env.production with the ALB URL
+# REACT_APP_API_URL=https://your-alb-url.amazonaws.com
+
+# 4. Configure UI deployment (one-time setup)
+# Edit deploy-config.env:
+# S3_BUCKET_UI=my-ui-bucket
+# S3_UI_PREFIX=ui/
+
+# 5. Deploy UI (repeatable)
+./deploy.sh deploy-ui
+```
+
+#### Available UI Commands
+
+```bash
+./deploy.sh build-ui     # Build React app for production
+./deploy.sh deploy-ui    # Build and deploy to S3 (uses deploy-config.env)
+./deploy.sh serve-ui     # Serve production build locally for testing
+```
+
 ## API Integration Examples
 
 ### JavaScript Example

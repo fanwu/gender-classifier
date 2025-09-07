@@ -25,3 +25,8 @@ environment  = "prod"
 
 # Logging Configuration
 log_retention_days = 7
+
+# UI Hosting Configuration
+ui_bucket_name = "your-ui-bucket-name"  # Replace with your S3 bucket name
+ui_s3_prefix = ""  # Empty for root, or "ui/" for subfolder
+cloudfront_price_class = "PriceClass_100"  # Most cost-effective

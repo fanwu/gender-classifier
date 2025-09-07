@@ -59,3 +59,21 @@ variable "log_retention_days" {
   type        = number
   default     = 7
 }
+
+# UI Hosting Variables
+variable "ui_bucket_name" {
+  description = "Name of S3 bucket for UI hosting"
+  type        = string
+}
+
+variable "ui_s3_prefix" {
+  description = "S3 prefix/folder for UI files (e.g., 'ui/' or empty string for root)"
+  type        = string
+  default     = ""
+}
+
+variable "cloudfront_price_class" {
+  description = "CloudFront price class (PriceClass_All, PriceClass_200, PriceClass_100)"
+  type        = string
+  default     = "PriceClass_100"
+}

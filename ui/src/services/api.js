@@ -3,9 +3,17 @@ import axios from 'axios';
 // API configuration
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
+console.log('API Configuration:', {
+  url: API_BASE_URL,
+  env: process.env.REACT_APP_ENV || 'development'
+});
+
 const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 30000, // 30 seconds timeout for image processing
+  headers: {
+    'Accept': 'application/json',
+  },
 });
 
 // Gender classification API service

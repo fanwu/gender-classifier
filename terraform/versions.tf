@@ -31,3 +31,17 @@ provider "aws" {
     }
   }
 }
+
+# AWS provider alias for S3 bucket region (us-west-2)
+provider "aws" {
+  alias  = "bucket_region" 
+  region = "us-west-2"
+
+  default_tags {
+    tags = {
+      Project     = var.project_name
+      Environment = var.environment
+      ManagedBy   = "Terraform"
+    }
+  }
+}

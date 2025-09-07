@@ -90,6 +90,13 @@ resource "aws_security_group" "main" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -278,10 +285,34 @@ resource "aws_lb_target_group" "main" {
   }
 }
 
+# Self-signed ACM certificate for ALB HTTPS
+resource "aws_acm_certificate" "main" {
+  private_key      = file("${path.module}/ssl/private-key.pem")
+  certificate_body = file("${path.module}/ssl/certificate.pem")
+
+  tags = {
+    Name = "gender-classifier-certificate"
+  }
+}
+
 resource "aws_lb_listener" "main" {
   load_balancer_arn = aws_lb.main.arn
   port              = "80"
   protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.main.arn
+  }
+}
+
+# HTTPS Listener
+resource "aws_lb_listener" "https" {
+  load_balancer_arn = aws_lb.main.arn
+  port              = "443"
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS-1-2-2017-01"
+  certificate_arn   = aws_acm_certificate.main.arn
 
   default_action {
     type             = "forward"
@@ -313,5 +344,160 @@ resource "aws_ecs_service" "main" {
 
   tags = {
     Name = "gender-classifier-service"
+  }
+}
+
+# =============================================================================
+# UI HOSTING INFRASTRUCTURE
+# =============================================================================
+
+# S3 Bucket for UI hosting (existing bucket in us-west-2)
+data "aws_s3_bucket" "ui_bucket" {
+  provider = aws.bucket_region
+  bucket   = var.ui_bucket_name
+}
+
+# S3 Bucket Public Access Block (in us-west-2) - Allow public access for website
+resource "aws_s3_bucket_public_access_block" "ui_bucket" {
+  provider = aws.bucket_region
+  bucket   = data.aws_s3_bucket.ui_bucket.id
+
+  block_public_acls       = false
+  block_public_policy     = false
+  ignore_public_acls      = false
+  restrict_public_buckets = false
+}
+
+# S3 Bucket Website Configuration (in us-west-2)
+resource "aws_s3_bucket_website_configuration" "ui_bucket" {
+  provider = aws.bucket_region
+  bucket   = data.aws_s3_bucket.ui_bucket.id
+
+  index_document {
+    suffix = "index.html"
+  }
+
+  error_document {
+    key = "index.html"  # SPA routing
+  }
+}
+
+# S3 Bucket Policy for CloudFront and public website access (in us-west-2)
+resource "aws_s3_bucket_policy" "ui_bucket" {
+  provider = aws.bucket_region
+  bucket   = data.aws_s3_bucket.ui_bucket.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "AllowCloudFrontAccess"
+        Effect    = "Allow"
+        Principal = {
+          AWS = aws_cloudfront_origin_access_identity.ui_oai.iam_arn
+        }
+        Action   = "s3:GetObject"
+        Resource = "${data.aws_s3_bucket.ui_bucket.arn}/*"
+      },
+      {
+        Sid       = "AllowPublicWebsiteAccess"
+        Effect    = "Allow"
+        Principal = "*"
+        Action    = "s3:GetObject"
+        Resource  = "${data.aws_s3_bucket.ui_bucket.arn}/ui/*"
+      }
+    ]
+  })
+}
+
+# CloudFront Origin Access Identity
+resource "aws_cloudfront_origin_access_identity" "ui_oai" {
+  comment = "OAI for ${var.project_name} UI"
+}
+
+# CloudFront Distribution for UI
+resource "aws_cloudfront_distribution" "ui_distribution" {
+  origin {
+    domain_name = data.aws_s3_bucket.ui_bucket.bucket_regional_domain_name
+    origin_id   = "S3-${data.aws_s3_bucket.ui_bucket.id}"
+    origin_path = "/ui"
+
+    s3_origin_config {
+      origin_access_identity = aws_cloudfront_origin_access_identity.ui_oai.cloudfront_access_identity_path
+    }
+  }
+
+  enabled             = true
+  is_ipv6_enabled     = true
+  default_root_object = "index.html"
+  comment             = "${var.project_name} UI Distribution"
+
+  default_cache_behavior {
+    allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    cached_methods   = ["GET", "HEAD"]
+    target_origin_id = "S3-${data.aws_s3_bucket.ui_bucket.id}"
+
+    forwarded_values {
+      query_string = false
+      cookies {
+        forward = "none"
+      }
+    }
+
+    viewer_protocol_policy = "redirect-to-https"
+    min_ttl                = 0
+    default_ttl            = 3600    # 1 hour
+    max_ttl                = 86400   # 24 hours
+    compress              = true
+  }
+
+  # Cache behavior for static assets (CSS, JS, images)
+  ordered_cache_behavior {
+    path_pattern     = "/static/*"
+    allowed_methods  = ["GET", "HEAD", "OPTIONS"]
+    cached_methods   = ["GET", "HEAD"]
+    target_origin_id = "S3-${data.aws_s3_bucket.ui_bucket.id}"
+
+    forwarded_values {
+      query_string = false
+      cookies {
+        forward = "none"
+      }
+    }
+
+    viewer_protocol_policy = "redirect-to-https"
+    min_ttl                = 0
+    default_ttl            = 31536000  # 1 year
+    max_ttl                = 31536000  # 1 year
+    compress              = true
+  }
+
+  # Custom error response for SPA routing
+  custom_error_response {
+    error_code         = 404
+    response_code      = 200
+    response_page_path = "/index.html"
+  }
+
+  custom_error_response {
+    error_code         = 403
+    response_code      = 200
+    response_page_path = "/index.html"
+  }
+
+  price_class = var.cloudfront_price_class
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  viewer_certificate {
+    cloudfront_default_certificate = true
+  }
+
+  tags = {
+    Name = "${var.project_name}-ui-distribution"
   }
 }

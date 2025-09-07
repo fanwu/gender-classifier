@@ -7,7 +7,7 @@ aws_region = "us-east-1"
 
 # Container Configuration
 # Replace YOUR_ACCOUNT_ID with your actual AWS account ID
-image_uri = "123456789012.dkr.ecr.us-east-1.amazonaws.com/gender-classifier:latest"
+image_uri = "238295645671.dkr.ecr.us-east-1.amazonaws.com/gender-classifier:latest"
 
 # Model Configuration
 # Replace with your actual S3 bucket name
@@ -25,3 +25,8 @@ environment  = "prod"
 
 # Logging Configuration
 log_retention_days = 7
+
+# UI Hosting Configuration
+ui_bucket_name = "fanwu-ml-test"  # Replace with your S3 bucket name
+ui_s3_prefix = "ui/"  # Empty for root, or "ui/" for subfolder
+cloudfront_price_class = "PriceClass_100"  # Most cost-effective

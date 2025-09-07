@@ -17,6 +17,7 @@ ECR_REPOSITORY="gender-classifier"
 PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 API_DIR="$PROJECT_ROOT/api"
 TERRAFORM_DIR="$PROJECT_ROOT/terraform"
+UI_DIR="$PROJECT_ROOT/ui"
 
 # Functions
 log_info() {
@@ -71,6 +72,30 @@ check_prerequisites() {
     fi
     
     log_success "Prerequisites check passed"
+}
+
+check_ui_prerequisites() {
+    log_info "Checking UI prerequisites..."
+    
+    # Check if npm is installed
+    if ! command -v npm &> /dev/null; then
+        log_error "npm is not installed. Please install Node.js and npm first."
+        exit 1
+    fi
+    
+    # Check if UI directory exists
+    if [ ! -d "$UI_DIR" ]; then
+        log_error "UI directory not found at $UI_DIR"
+        exit 1
+    fi
+    
+    # Check if package.json exists
+    if [ ! -f "$UI_DIR/package.json" ]; then
+        log_error "package.json not found in UI directory"
+        exit 1
+    fi
+    
+    log_success "UI prerequisites check passed"
 }
 
 build_and_push_image() {
@@ -168,6 +193,149 @@ apply_terraform_plan() {
     log_success "Infrastructure deployed successfully!"
 }
 
+build_ui() {
+    log_info "Building React UI..."
+    
+    cd "$UI_DIR"
+    
+    # Install dependencies if node_modules doesn't exist
+    if [ ! -d "node_modules" ]; then
+        log_info "Installing UI dependencies..."
+        npm install
+    fi
+    
+    # Build for production
+    log_info "Building UI for production..."
+    npm run build:prod
+    
+    log_success "UI built successfully!"
+    log_info "Build output in: $UI_DIR/build/"
+}
+
+deploy_ui_to_s3() {
+    log_info "Deploying UI to S3..."
+    
+    # Try to get bucket name from Terraform outputs if not set
+    if [ -z "$S3_BUCKET_UI" ]; then
+        log_info "S3_BUCKET_UI not set, trying to get from Terraform outputs..."
+        cd "$TERRAFORM_DIR"
+        if [ -f "terraform.tfstate" ]; then
+            S3_BUCKET_UI=$(terraform output -raw ui_bucket_name 2>/dev/null || echo "")
+            if [ -n "$S3_BUCKET_UI" ]; then
+                log_info "Using Terraform-managed S3 bucket: $S3_BUCKET_UI"
+            fi
+        fi
+        cd "$PROJECT_ROOT"
+    fi
+    
+    if [ -z "$S3_BUCKET_UI" ]; then
+        log_error "S3_BUCKET_UI environment variable not set and no Terraform state found"
+        log_info "Option 1: Set manually: S3_BUCKET_UI=my-bucket ./deploy.sh deploy-ui"
+        log_info "Option 2: Deploy infrastructure first: ./deploy.sh deploy"
+        exit 1
+    fi
+    
+    # Try to get CloudFront distribution ID from Terraform if not set
+    if [ -z "$CLOUDFRONT_ID" ]; then
+        cd "$TERRAFORM_DIR"
+        if [ -f "terraform.tfstate" ]; then
+            CLOUDFRONT_ID=$(terraform output -raw cloudfront_distribution_id 2>/dev/null || echo "")
+            if [ -n "$CLOUDFRONT_ID" ]; then
+                log_info "Using Terraform-managed CloudFront distribution: $CLOUDFRONT_ID"
+            fi
+        fi
+        cd "$PROJECT_ROOT"
+    fi
+    
+    cd "$UI_DIR"
+    
+    if [ ! -d "build" ]; then
+        log_error "No build directory found. Building first..."
+        build_ui
+    fi
+    
+    # Determine S3 destination path
+    local s3_destination="s3://$S3_BUCKET_UI/"
+    if [ -n "$S3_UI_PREFIX" ]; then
+        s3_destination="s3://$S3_BUCKET_UI/$S3_UI_PREFIX"
+        log_info "Uploading to S3 bucket: $S3_BUCKET_UI in folder: $S3_UI_PREFIX"
+    else
+        log_info "Uploading to S3 bucket: $S3_BUCKET_UI (root)"
+    fi
+    
+    # Sync files to S3
+    aws s3 sync build/ "$s3_destination" --delete
+    
+    # Set proper content types with prefix support
+    log_info "Setting proper content types..."
+    aws s3 cp "$s3_destination" "$s3_destination" --recursive \
+        --exclude "*" --include "*.html" --content-type "text/html" \
+        --metadata-directive REPLACE
+    
+    aws s3 cp "$s3_destination" "$s3_destination" --recursive \
+        --exclude "*" --include "*.js" --content-type "application/javascript" \
+        --metadata-directive REPLACE
+    
+    aws s3 cp "$s3_destination" "$s3_destination" --recursive \
+        --exclude "*" --include "*.css" --content-type "text/css" \
+        --metadata-directive REPLACE
+    
+    # Invalidate CloudFront if distribution ID provided
+    if [ -n "$CLOUDFRONT_ID" ]; then
+        local invalidation_paths="${CLOUDFRONT_PATHS:-/*}"
+        if [ -n "$S3_UI_PREFIX" ] && [ "$invalidation_paths" = "/*" ]; then
+            invalidation_paths="/$S3_UI_PREFIX*"
+        fi
+        
+        log_info "Invalidating CloudFront distribution: $CLOUDFRONT_ID"
+        log_info "Invalidation paths: $invalidation_paths"
+        aws cloudfront create-invalidation --distribution-id $CLOUDFRONT_ID --paths "$invalidation_paths"
+        log_info "CloudFront invalidation started"
+    fi
+    
+    log_success "UI deployment completed!"
+    
+    # Show access URLs
+    if [ -n "$CLOUDFRONT_ID" ]; then
+        # Try to get CloudFront domain from Terraform
+        cd "$TERRAFORM_DIR"
+        CLOUDFRONT_DOMAIN=$(terraform output -raw cloudfront_domain_name 2>/dev/null || echo "")
+        cd "$PROJECT_ROOT"
+        
+        if [ -n "$CLOUDFRONT_DOMAIN" ]; then
+            log_success "🌐 Your UI is available at: https://$CLOUDFRONT_DOMAIN"
+            log_info "CloudFront distribution ID: $CLOUDFRONT_ID"
+        else
+            log_info "CloudFront distribution: $CLOUDFRONT_ID"
+            log_info "UI will be available at your CloudFront URL (check AWS console)"
+        fi
+        
+        if [ -n "$S3_UI_PREFIX" ]; then
+            log_info "S3 folder: $S3_UI_PREFIX"
+        fi
+    else
+        if [ -n "$S3_UI_PREFIX" ]; then
+            log_info "Your UI is available at: https://$S3_BUCKET_UI.s3-website-$AWS_REGION.amazonaws.com/$S3_UI_PREFIX"
+        else
+            log_info "Your UI is available at: https://$S3_BUCKET_UI.s3-website-$AWS_REGION.amazonaws.com"
+        fi
+    fi
+}
+
+serve_ui_locally() {
+    log_info "Serving UI locally..."
+    cd "$UI_DIR"
+    
+    if [ ! -d "build" ]; then
+        log_error "No build directory found. Building first..."
+        build_ui
+    fi
+    
+    log_info "Starting local server at http://localhost:3000"
+    log_info "Press Ctrl+C to stop"
+    npx serve -s build -l 3000
+}
+
 show_outputs() {
     log_info "Retrieving deployment information..."
     cd "$TERRAFORM_DIR"
@@ -214,7 +382,7 @@ show_help() {
     echo ""
     echo "Usage: $0 [COMMAND]"
     echo ""
-    echo "Commands:"
+    echo "Infrastructure Commands:"
     echo "  deploy        Full deployment (build image + deploy infrastructure)"
     echo "  build         Build and push Docker image only"
     echo "  infrastructure Deploy infrastructure only (assumes image exists)"
@@ -222,20 +390,50 @@ show_help() {
     echo "  apply         Apply existing Terraform plan"
     echo "  outputs       Show deployment outputs"
     echo "  destroy       Destroy all infrastructure"
+    echo ""
+    echo "UI Commands:"
+    echo "  build-ui      Build React UI for production"
+    echo "  deploy-ui     Deploy UI to S3 (requires S3_BUCKET_UI env var)"
+    echo "  serve-ui      Serve UI build locally on port 3000"
+    echo ""
+    echo "General:"
     echo "  help          Show this help message"
     echo ""
     echo "Prerequisites:"
-    echo "  - Docker installed"
-    echo "  - Terraform installed"
+    echo "  - Docker installed (for API deployment)"
+    echo "  - Terraform installed (for infrastructure)"
     echo "  - AWS CLI installed and configured"
+    echo "  - Node.js and npm installed (for UI)"
     echo "  - terraform/terraform.tfvars file configured"
     echo ""
-    echo "Full deployment process:"
-    echo "  1. Builds Docker image"
-    echo "  2. Pushes to ECR"
-    echo "  3. Updates terraform.tfvars with image URI"
-    echo "  4. Deploys infrastructure with Terraform"
+    echo "UI Deployment Configuration:"
+    echo "  1. Edit deploy-config.env with your settings (one-time setup)"
+    echo "  2. Run: ./deploy.sh deploy-ui"
+    echo "  Note: Config file is automatically loaded if it exists"
+    echo ""
+    echo "  Config file settings:"
+    echo "    S3_BUCKET_UI      - S3 bucket name for UI hosting"
+    echo "    S3_UI_PREFIX      - S3 folder path (optional, e.g., 'ui/')"
+    echo "    CLOUDFRONT_ID     - CloudFront distribution ID (optional)"
+    echo ""
+    echo "Examples:"
+    echo "  # API deployment"
+    echo "  ./deploy.sh deploy                           # Deploy API infrastructure"
+    echo "  ./deploy.sh build-ui                         # Build UI only"
+    echo ""
+    echo "  # UI deployment (uses deploy-config.env automatically)"
+    echo "  ./deploy.sh deploy-ui                        # Deploy UI to configured S3 bucket"
+    echo ""
+    echo "  # Manual override (if needed)"
+    echo "  S3_BUCKET_UI=my-bucket ./deploy.sh deploy-ui # Override config file"
 }
+
+# Auto-load configuration file if it exists
+CONFIG_FILE="$PROJECT_ROOT/deploy-config.env"
+if [ -f "$CONFIG_FILE" ]; then
+    log_info "Loading configuration from deploy-config.env..."
+    source "$CONFIG_FILE"
+fi
 
 # Main script logic
 case "${1:-deploy}" in
@@ -273,6 +471,21 @@ case "${1:-deploy}" in
         ;;
     "destroy")
         destroy_infrastructure
+        ;;
+    "build-ui")
+        log_info "Building React UI..."
+        check_ui_prerequisites
+        build_ui
+        ;;
+    "deploy-ui")
+        log_info "Deploying React UI to S3..."
+        check_ui_prerequisites
+        deploy_ui_to_s3
+        ;;
+    "serve-ui")
+        log_info "Serving UI locally..."
+        check_ui_prerequisites
+        serve_ui_locally
         ;;
     "help"|"-h"|"--help")
         show_help

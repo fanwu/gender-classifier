@@ -5,6 +5,11 @@ output "load_balancer_url" {
   value       = "http://${aws_lb.main.dns_name}"
 }
 
+output "load_balancer_https_url" {
+  description = "HTTPS URL of the Application Load Balancer"
+  value       = "https://${aws_lb.main.dns_name}"
+}
+
 output "load_balancer_dns_name" {
   description = "DNS name of the Application Load Balancer"
   value       = aws_lb.main.dns_name
@@ -53,4 +58,30 @@ output "execution_role_arn" {
 output "task_role_arn" {
   description = "ARN of the ECS task role"
   value       = aws_iam_role.ecs_task_role.arn
+}
+
+# UI Infrastructure Outputs
+output "ui_bucket_name" {
+  description = "Name of the S3 bucket for UI hosting"
+  value       = data.aws_s3_bucket.ui_bucket.id
+}
+
+output "ui_bucket_website_endpoint" {
+  description = "Website endpoint of the S3 bucket"
+  value       = aws_s3_bucket_website_configuration.ui_bucket.website_endpoint
+}
+
+output "cloudfront_distribution_id" {
+  description = "ID of the CloudFront distribution"
+  value       = aws_cloudfront_distribution.ui_distribution.id
+}
+
+output "cloudfront_domain_name" {
+  description = "Domain name of the CloudFront distribution"
+  value       = aws_cloudfront_distribution.ui_distribution.domain_name
+}
+
+output "ui_url" {
+  description = "URL of the UI (CloudFront distribution)"
+  value       = "https://${aws_cloudfront_distribution.ui_distribution.domain_name}"
 }
